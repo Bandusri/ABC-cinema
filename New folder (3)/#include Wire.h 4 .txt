@@ -1,0 +1,117 @@
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_MPU6050.h>
+#include <DHT.h>
+#include <TinyGPS++.h>
+#include <WiFi.h>
+#include <FirebaseESP32.h>
+
+#define DHTPIN 2
+#define DHTTYPE DHT11
+
+#define GSM_TX_PIN 3
+#define GSM_RX_PIN 4
+HardwareSerial gsmSerial(1);
+
+#define GPS_TX_PIN 5
+#define GPS_RX_PIN 6
+HardwareSerial gpsSerial(2);
+
+#define FIREBASE_HOST "your-firebase-project.firebaseio.com"
+#define FIREBASE_AUTH "your-firebase-auth-token"
+
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PASSWORD "your-wifi-password"
+
+DHT dht(DHTPIN, DHTTYPE);
+Adafruit_MPU6050 mpu;
+TinyGPSPlus gps;
+
+FirebaseData firebaseData;
+
+void setup() {
+  Serial.begin(9600);
+  gsmSerial.begin(9600, SERIAL_8N1, GSM_RX_PIN, GSM_TX_PIN);
+  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+
+  dht.begin();
+  mpu.begin();
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+
+  Serial.println("Connected to WiFi");
+
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+
+  delay(1000);
+}
+
+void loop() {
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  sensors_event_t accelData, gyroData;
+  mpu.getEvent(&accelData, &gyroData);
+
+  float accelX = accelData.acceleration.x;
+  float accelY = accelData.acceleration.y;
+  float accelZ = accelData.acceleration.z;
+
+  float gyroX = gyroData.gyro.x;
+  float gyroY = gyroData.gyro.y;
+  float gyroZ = gyroData.gyro.z;
+
+  while (gpsSerial.available() > 0) {
+    if (gps.encode(gpsSerial.read())) {
+      if (gps.location.isValid()) {
+        double latitude = gps.location.lat();
+        double longitude = gps.location.lng();
+
+        // Send sensor data to Firebase
+        Firebase.setFloat(firebaseData, "temperature", temperature);
+        Firebase.setFloat(firebaseData, "humidity", humidity);
+        Firebase.setFloat(firebaseData, "accelX", accelX);
+        Firebase.setFloat(firebaseData, "accelY", accelY);
+        Firebase.setFloat(firebaseData, "accelZ", accelZ);
+        Firebase.setFloat(firebaseData, "gyroX", gyroX);
+        Firebase.setFloat(firebaseData, "gyroY", gyroY);
+        Firebase.setFloat(firebaseData, "gyroZ", gyroZ);
+        Firebase.setDouble(firebaseData, "latitude", latitude);
+        Firebase.setDouble(firebaseData, "longitude", longitude);
+
+        if (Firebase.failed()) {
+          Serial.println("Failed to send data to Firebase");
+        } else {
+          Serial.println("Data sent to Firebase successfully");
+        }
+
+        // Print sensor data to Serial Monitor
+        Serial.print("Temperature: ");
+        Serial.print(temperature);
+        Serial.print(" °C\tHumidity: ");
+        Serial.print(humidity);
+        Serial.print(" %\tAccelerometer (X,Y,Z): ");
+        Serial.print(accelX);
+        Serial.print(", ");
+        Serial.print(accelY);
+        Serial.print(", ");
+        Serial.print(accelZ);
+        Serial.print("\tGyroscope (X,Y,Z): ");
+        Serial.print(gyroX);
+        Serial.print(", ");
+        Serial.print(gyroY);
+        Serial.print(", ");
+        Serial.print(gyroZ);
+        Serial.print("\tLatitude: ");
+        Serial.print(latitude, 6);
+        Serial.print("\tLongitude: ");
+        Serial.println(longitude, 6);
+      }
+    }
+  }
+}

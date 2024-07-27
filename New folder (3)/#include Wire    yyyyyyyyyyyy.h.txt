@@ -1,0 +1,87 @@
+#include <Wire.h>
+#include <FirebaseESP32.h>
+#include <DHT.h>
+#include <MPU6050_tockn.h>
+#include <TinyGPS++.h>
+
+#define FIREBASE_HOST "https://esp-tempareture-default-rtdb.firebaseio.com"
+#define FIREBASE_AUTH "AIzaSyBCqnuqJo754o-0TOy9nUYnbo4g_j-GjrE"
+#define DHTPIN 23
+#define DHTTYPE DHT11
+#define WATERPIN 32
+#define RX_PIN 16
+#define TX_PIN 17
+
+FirebaseData firebaseData;
+DHT dht(DHTPIN, DHTTYPE);
+MPU6050 mpu6050(Wire);
+TinyGPSPlus gps;
+int waterLevel;
+
+void setup() {
+  Serial.begin(9600);
+
+  Wire.begin();
+  mpu6050.begin();
+  dht.begin();
+  pinMode(WATERPIN, INPUT);
+
+  WiFi.begin("SLT_FIBREDL", "dl2001dl2001dl2001");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+}
+
+void loop() {
+  float ax, ay, az;
+  float gx, gy, gz;
+  float temperature, humidity;
+  float latitude, longitude;
+  unsigned long age;
+  
+  while (Serial.available() > 0) {
+    if (gps.encode(Serial.read())) {
+      latitude = gps.location.lat();
+      longitude = gps.location.lng();
+      age = gps.location.age();
+    }
+  }
+
+  mpu6050.update();
+  ax = mpu6050.getAccX();
+  ay = mpu6050.getAccY();
+  az = mpu6050.getAccZ();
+  gx = mpu6050.getGyroX();
+  gy = mpu6050.getGyroY();
+  gz = mpu6050.getGyroZ();
+  
+  temperature = dht.readTemperature();
+  humidity = dht.readHumidity();
+  
+  waterLevel = analogRead(WATERPIN);
+
+  Firebase.setFloat(firebaseData, "/acceleration/x", ax);
+  Firebase.setFloat(firebaseData, "/acceleration/y", ay);
+  Firebase.setFloat(firebaseData, "/acceleration/z", az);
+
+  Firebase.setFloat(firebaseData, "/gyroscope/x", gx);
+  Firebase.setFloat(firebaseData, "/gyroscope/y", gy);
+  Firebase.setFloat(firebaseData, "/gyroscope/z", gz);
+
+  Firebase.setFloat(firebaseData, "/temperature", temperature);
+  Firebase.setFloat(firebaseData, "/humidity", humidity);
+  Firebase.setInt(firebaseData, "/water-level", waterLevel);
+  Firebase.setFloat(firebaseData, "/latitude", latitude);
+  Firebase.setFloat(firebaseData, "/longitude", longitude);
+  Firebase.setInt(firebaseData, "/gps-age", age);
+
+  if (firebaseData.dataAvailable()) {
+    Serial.println(firebaseData.stringData());
+  }
+
+  delay(1000);
+}
